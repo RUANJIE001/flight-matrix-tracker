@@ -37,7 +37,8 @@ class GoogleFlightsScraper(BaseScraper):
         query = f"Flights+to+{urllib.parse.quote(dest)}+from+{urllib.parse.quote(origin)}+on+{depart_date}+{suffix}"
         if nonstop:
             query += "+nonstop"
-        return f"https://www.google.com/travel/flights?q={query}"
+        # 强制指定货币为人民币 CNY、界面语言为简体中文 zh-CN、国家市场为中国 CN
+        return f"https://www.google.com/travel/flights?curr=CNY&hl=zh-CN&gl=CN&q={query}"
 
     async def search(
         self,
@@ -85,6 +86,7 @@ class GoogleFlightsScraper(BaseScraper):
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             locale="zh-CN",
+            timezone_id="Asia/Shanghai",
             viewport={"width": 1280, "height": 800}
         )
 
@@ -127,12 +129,16 @@ class GoogleFlightsScraper(BaseScraper):
         return None
 
     async def _poll_price(self, page: Page, max_wait_sec: int = 12) -> Optional[float]:
-        """页面内部轮询查找有效价格"""
+        """页面内部轮询查找有效价格 (严格优先提取人民币 CNY/￥)"""
         js_extract_code = """
         () => {
-            const prices = new Set();
-            const prefixRegex = /(?:[\\u00a5\\uffe5$€£₩₹₱]|(?:CNY|RMB|USD|EUR|JPY|HKD|TWD|GBP|AUD|CAD|RM|SGD)\\$?\\s?)[\\s]*([\\d,]+(?:\\.\\d+)?)/gi;
-            const suffixRegex = /([\\d,]+(?:\\.\\d+)?)\\s*(?:元|人民币|CNY|USD|EUR)/gi;
+            const cnyPrices = new Set();
+            const usdPrices = new Set();
+
+            // 专属人民币正则：全角￥(\uffe5)、半角¥(\u00a5)、CNY、RMB、元、人民币
+            const cnyPrefixRegex = /(?:[\\u00a5\\uffe5]|(?:CNY|RMB)\\$?\\s?)[\\s]*([\\d,]+(?:\\.\\d+)?)/gi;
+            const cnySuffixRegex = /([\\d,]+(?:\\.\\d+)?)\\s*(?:元|人民币|CNY)/gi;
+            const usdPrefixRegex = /\\$\\s*([\\d,]+(?:\\.\\d+)?)/g;
 
             function parseNumber(str) {
                 if (!str) return null;
@@ -144,20 +150,29 @@ class GoogleFlightsScraper(BaseScraper):
 
             function extract(text) {
                 if (!text || typeof text !== 'string') return;
-                prefixRegex.lastIndex = 0;
+                
+                // 1. 人民币提取
+                cnyPrefixRegex.lastIndex = 0;
                 let m;
-                while ((m = prefixRegex.exec(text)) !== null) {
+                while ((m = cnyPrefixRegex.exec(text)) !== null) {
                     const p = parseNumber(m[1]);
-                    if (p) prices.add(p);
+                    if (p) cnyPrices.add(p);
                 }
-                suffixRegex.lastIndex = 0;
-                while ((m = suffixRegex.exec(text)) !== null) {
+                cnySuffixRegex.lastIndex = 0;
+                while ((m = cnySuffixRegex.exec(text)) !== null) {
                     const p = parseNumber(m[1]);
-                    if (p) prices.add(p);
+                    if (p) cnyPrices.add(p);
+                }
+
+                // 2. 美元备用提取 (若机房IP导致Google依然返回美元)
+                usdPrefixRegex.lastIndex = 0;
+                let m_usd;
+                while ((m_usd = usdPrefixRegex.exec(text)) !== null) {
+                    const p = parseNumber(m_usd[1]);
+                    if (p) usdPrices.add(p);
                 }
             }
 
-            // 1. 常见选择器
             const nodes = document.querySelectorAll('[aria-label], [data-price], [data-value], .YMlIz, .FpEdX, span, div');
             for (const el of nodes) {
                 const aria = el.getAttribute('aria-label');
@@ -165,15 +180,24 @@ class GoogleFlightsScraper(BaseScraper):
                 const dp = el.getAttribute('data-price') || el.getAttribute('data-value');
                 if (dp) {
                     const p = parseNumber(dp);
-                    if (p) prices.add(p);
+                    if (p) cnyPrices.add(p);
                 }
                 if (el.children.length <= 1 && el.textContent && el.textContent.length < 40) {
                     extract(el.textContent);
                 }
             }
-            if (prices.size > 0) {
-                return Array.from(prices).sort((a, b) => a - b)[0];
+
+            // 优先返回纯正的人民币价格
+            if (cnyPrices.size > 0) {
+                return Array.from(cnyPrices).sort((a, b) => a - b)[0];
             }
+
+            // 极端兜底：如果确实只抓到了美元价格（如 $371），按即时汇率换算成人民币（约 7.2）
+            if (usdPrices.size > 0) {
+                const lowestUsd = Array.from(usdPrices).sort((a, b) => a - b)[0];
+                return Math.round(lowestUsd * 7.2);
+            }
+
             return null;
         }
         """
