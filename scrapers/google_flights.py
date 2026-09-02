@@ -142,8 +142,14 @@ class GoogleFlightsScraper(BaseScraper):
 
             function parseNumber(str) {
                 if (!str) return null;
-                const clean = str.replace(/,/g, '').trim();
+                const s = String(str).trim();
+                // 严格排除日期、时间格式 (例如 2026-10-24, 2026/10/24, 08:30)
+                if (s.includes('-') || s.includes('/') || s.includes(':')) return null;
+                const clean = s.replace(/,/g, '').trim();
+                if (!/^\d+(?:\.\d+)?$/.test(clean)) return null;
                 const n = parseFloat(clean);
+                // 排除常见年份误识别 (2024, 2025, 2026, 2027)
+                if ([2024, 2025, 2026, 2027].includes(Math.round(n))) return null;
                 if (!isNaN(n) && n >= 50 && n <= 500000) return Math.round(n);
                 return null;
             }
@@ -173,11 +179,11 @@ class GoogleFlightsScraper(BaseScraper):
                 }
             }
 
-            const nodes = document.querySelectorAll('[aria-label], [data-price], [data-value], .YMlIz, .FpEdX, span, div');
+            const nodes = document.querySelectorAll('[aria-label], [data-price], .YMlIz, .FpEdX, span, div');
             for (const el of nodes) {
                 const aria = el.getAttribute('aria-label');
                 if (aria) extract(aria);
-                const dp = el.getAttribute('data-price') || el.getAttribute('data-value');
+                const dp = el.getAttribute('data-price');
                 if (dp) {
                     const p = parseNumber(dp);
                     if (p) cnyPrices.add(p);
