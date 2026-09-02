@@ -43,12 +43,15 @@ jobs:
 
       - name: 执行机票价格矩阵比价与监控
         env:
-          # 从 GitHub Secrets 中读取敏感信息 (兼容 EMAIL_SENDER 与 EMAIL_USER 等多重别名)
-          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER || secrets.EMAIL_USER }}
-          EMAIL_AUTH_CODE: ${{ secrets.EMAIL_AUTH_CODE || secrets.EMAIL_AUTH_TOKEN }}
-          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT || secrets.RECEIVER_EMAIL }}
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER || secrets.EMAIL_HOST || 'smtp.gmail.com' }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT || '587' }}
+          # 从 GitHub Secrets 中读取敏感信息
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_AUTH_CODE: ${{ secrets.EMAIL_AUTH_CODE }}
+          EMAIL_AUTH_TOKEN: ${{ secrets.EMAIL_AUTH_TOKEN }}
+          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+          RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
           # 可选：航线与目标覆盖
           ORIGIN: ${{ vars.ORIGIN }}
           DEST: ${{ vars.DEST }}

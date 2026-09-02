@@ -86,29 +86,33 @@ class CtripScraper(BaseScraper):
         return None
 
     def _extract_lowest_price(self, data: dict, nonstop: bool) -> Optional[float]:
-        """从接口响应中多层遍历提取最低票价"""
-        prices = []
+        """从接口响应中多层遍历提取最低票价 (直飞优先)"""
+        direct_prices = []
+        all_prices = []
         try:
             # 1. 尝试直接获取最低价格统计汇总
             if "lowestPrice" in data and isinstance(data["lowestPrice"], (int, float)):
-                prices.append(float(data["lowestPrice"]))
+                all_prices.append(float(data["lowestPrice"]))
 
             # 2. 遍历航班列表
             itineraries = data.get("itineraryList") or data.get("flightList") or []
             for item in itineraries:
-                # 若限制直飞，过滤中转航线
-                if nonstop:
-                    segments = item.get("flightSegments") or []
-                    if any(len(s.get("flightList", [])) > 1 for s in segments):
-                        continue
+                segments = item.get("flightSegments") or []
+                is_direct = not any(len(s.get("flightList", [])) > 1 for s in segments)
 
                 price_info = item.get("priceInfo") or item.get("salePriceInfo") or {}
                 p = price_info.get("price") or price_info.get("totalPrice") or item.get("price")
                 if p and isinstance(p, (int, float)) and p > 50:
-                    prices.append(float(p))
+                    val = float(p)
+                    all_prices.append(val)
+                    if is_direct:
+                        direct_prices.append(val)
 
-            if prices:
-                return min(prices)
+            # 直飞优先：有直飞取直飞最低，无直飞退回中转最低
+            if nonstop and direct_prices:
+                return min(direct_prices)
+            if all_prices:
+                return min(all_prices)
         except Exception:
             pass
         return None

@@ -44,12 +44,30 @@ class Notifier:
         success = True
         # 1. 发送邮件
         if self.email_cfg.get("enabled"):
+            sender = self._clean_val(self.email_cfg.get("sender_email", ""))
+            auth_code = self._clean_val(self.email_cfg.get("sender_auth_code", ""))
+            recipient = self._clean_val(self.email_cfg.get("recipient_email", ""))
+
+            # 校验是否依然为占位符
+            if not sender or not auth_code or "your_email" in sender or "abcd efgh" in auth_code or sender == "false":
+                print("=================================================================")
+                print("❌ [Notifier] 严重提醒：检测到未配置真实的发信 Gmail 或应用密码！")
+                print(f"   当前读取的发件账号: '{sender}'")
+                print(f"   当前读取的收件账号: '{recipient}'")
+                print("   👉 请前往 GitHub 仓库: Settings -> Secrets and variables -> Actions")
+                print("   点击 'New repository secret' 补充配置：")
+                print("   1. EMAIL_SENDER: 你的真实 Gmail 账号 (如 xxx@gmail.com)")
+                print("   2. EMAIL_AUTH_CODE: 你的 16 位 Google 应用专用密码")
+                print("   3. EMAIL_RECIPIENT: 接收提醒的目标邮箱")
+                print("=================================================================")
+                raise ValueError("未配置 GitHub Secrets (EMAIL_SENDER / EMAIL_AUTH_CODE)！")
+
             try:
                 self._send_smtp_email(subject, html_content)
-                print(f"[Notifier] 邮件已成功发送至 {self.email_cfg.get('recipient_email')}")
+                print(f"[Notifier] 邮件已成功发送至 {recipient}")
             except Exception as e:
-                print(f"[Notifier] 邮件发送失败: {e}")
-                success = False
+                print(f"[Notifier] ❌ 邮件发送失败: {e}")
+                raise e
 
         # 2. 发送移动端 Webhook (若配置)
         self._send_webhooks(subject, analysis)

@@ -1,12 +1,12 @@
 # 监控航线与目标配置
 flight:
-  origin: "PVG"          # 出发机场代码 (如 PVG, SHA, PEK, CAN)
-  dest: "TYO"            # 目的机场或城市代码 (如 TYO, HND, NRT, FUK, BKK)
+  origin: "SHA"          # 出发机场/城市代码: SHA (上海虹桥/浦东统称) 或 PVG
+  dest: "KHG"            # 目的机场代码: KHG (喀什徕宁国际机场)
   trip_type: "roundtrip" # roundtrip (往返) 或 oneway (单程)
   depart_date: "2026-10-24" # 基准出发日期 YYYY-MM-DD
   return_date: "2026-10-31" # 基准返程日期 (往返时必填) YYYY-MM-DD
-  nonstop: true          # 是否仅直飞
-  target_price: 2500     # 目标期望价格 (低于或等于该价格时立即发送达标邮件)
+  nonstop: true          # 直飞优先 (优先直飞，无直飞时自动回退中转并展示)
+  target_price: 3500     # 目标期望价格 (往返低于或等于该价格时立即发送达标邮件)
   flexible_days: 1       # 弹性天数 (1 表示 ±1 天共 9 组组合矩阵；0 表示仅查单一日)
 
 # 抓取数据源平台开关

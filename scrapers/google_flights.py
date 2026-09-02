@@ -47,15 +47,30 @@ class GoogleFlightsScraper(BaseScraper):
         return_date: Optional[str] = None,
         nonstop: bool = False
     ) -> Optional[FlightOffer]:
-        url = self.build_url(origin, dest, depart_date, return_date, nonstop)
-        
-        if not self.browser:
+        target_browser = self.browser
+        close_browser_after = False
+
+        if not target_browser:
             from playwright.async_api import async_playwright
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
-                return await self._scrape_with_browser(browser, url, origin, dest, depart_date, return_date, nonstop)
-        else:
-            return await self._scrape_with_browser(self.browser, url, origin, dest, depart_date, return_date, nonstop)
+            p = await async_playwright().start()
+            target_browser = await p.chromium.launch(headless=True)
+            close_browser_after = True
+
+        try:
+            # 直飞优先：若开启了 nonstop，先查直飞
+            if nonstop:
+                url_direct = self.build_url(origin, dest, depart_date, return_date, nonstop=True)
+                offer = await self._scrape_with_browser(target_browser, url_direct, origin, dest, depart_date, return_date, nonstop=True)
+                if offer:
+                    return offer
+                # 直飞无结果，自动优雅回退到中转航线
+                print(f"[{self.name}] {origin}⇄{dest} ({depart_date}) 无直飞航班，自动检索中转航班...")
+
+            url_any = self.build_url(origin, dest, depart_date, return_date, nonstop=False)
+            return await self._scrape_with_browser(target_browser, url_any, origin, dest, depart_date, return_date, nonstop=False)
+        finally:
+            if close_browser_after and target_browser:
+                await target_browser.close()
 
     async def _scrape_with_browser(
         self,

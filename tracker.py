@@ -49,26 +49,26 @@ def load_config() -> Dict[str, Any]:
         config["flight"]["nonstop"] = clean_val(os.getenv("NONSTOP")).lower() in ["true", "1", "yes"]
 
     # 邮件 Secret 覆盖 (支持规范别名 EMAIL_USER / EMAIL_AUTH_TOKEN / EMAIL_HOST)
-    sender = os.getenv("EMAIL_SENDER") or os.getenv("EMAIL_USER")
-    if sender:
-        config["email"]["sender_email"] = clean_val(sender)
+    sender = clean_val(os.getenv("EMAIL_SENDER") or os.getenv("EMAIL_USER"))
+    if sender and sender.lower() not in ["false", "none", ""]:
+        config["email"]["sender_email"] = sender
 
-    auth_token = os.getenv("EMAIL_AUTH_CODE") or os.getenv("EMAIL_AUTH_TOKEN") or os.getenv("EMAIL_PASSWORD")
-    if auth_token:
-        # 严格清洗内部空格 (针对 Google 16位应用密码)
-        config["email"]["sender_auth_code"] = clean_val(auth_token).replace(" ", "")
+    auth_token = clean_val(os.getenv("EMAIL_AUTH_CODE") or os.getenv("EMAIL_AUTH_TOKEN") or os.getenv("EMAIL_PASSWORD"))
+    if auth_token and auth_token.lower() not in ["false", "none", ""]:
+        # 严格清洗内部空格 (针对 Google 16位应用专用密码)
+        config["email"]["sender_auth_code"] = auth_token.replace(" ", "")
 
-    recipient = os.getenv("EMAIL_RECIPIENT") or os.getenv("RECEIVER_EMAIL")
-    if recipient:
-        config["email"]["recipient_email"] = clean_val(recipient)
+    recipient = clean_val(os.getenv("EMAIL_RECIPIENT") or os.getenv("RECEIVER_EMAIL"))
+    if recipient and recipient.lower() not in ["false", "none", ""]:
+        config["email"]["recipient_email"] = recipient
 
-    host = os.getenv("SMTP_SERVER") or os.getenv("EMAIL_HOST")
-    if host:
-        config["email"]["smtp_server"] = clean_val(host).replace("http://", "").replace("https://", "").split(":")[0]
+    host = clean_val(os.getenv("SMTP_SERVER") or os.getenv("EMAIL_HOST"))
+    if host and host.lower() not in ["false", "none", ""]:
+        config["email"]["smtp_server"] = host.replace("http://", "").replace("https://", "").split(":")[0]
 
-    port = os.getenv("SMTP_PORT") or os.getenv("EMAIL_PORT")
-    if port:
-        config["email"]["smtp_port"] = int(clean_val(port))
+    port = clean_val(os.getenv("SMTP_PORT") or os.getenv("EMAIL_PORT"))
+    if port and port.lower() not in ["false", "none", ""]:
+        config["email"]["smtp_port"] = int(port)
 
     return config
 
@@ -164,7 +164,12 @@ async def main():
 
     # 6. 发送邮件与消息通知
     notifier = Notifier(config)
-    notifier.send_notification(flight_cfg, analysis)
+    try:
+        notifier.send_notification(flight_cfg, analysis)
+    except Exception as e:
+        print(f"\n❌ [Tracker] 邮件推送失败: {e}")
+        print("💡 请确认在 GitHub 仓库 Settings -> Secrets -> Actions 中配置了真实的 EMAIL_SENDER 与 EMAIL_AUTH_CODE (Google 16位应用专用密码)！")
+        sys.exit(1)
 
 def save_history(origin: str, dest: str, analysis: MatrixAnalysis):
     """保存抓取历史到本地文件"""
