@@ -64,10 +64,11 @@ jobs:
           python tracker.py
 
       - name: 自动提交并推送历史价格数据 (history.json)
+        continue-on-error: true # 即使未开启写权限也保障工作流顺利完成
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           if [ -f history.json ]; then
             git add history.json
-            git diff --quiet && git diff --staged --quiet || (git commit -m "chore: 自动归档最新机票抓取记录 [skip ci]" && git push)
+            git diff --quiet && git diff --staged --quiet || (git commit -m "chore: 自动归档最新机票抓取记录 [skip ci]" && (git push || echo "⚠️ 提示：若需自动将价格历史存回仓库，请前往 Settings -> Actions -> General 将 Workflow permissions 改为 Read and write permissions"))
           fi
