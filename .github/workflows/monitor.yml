@@ -1,12 +1,7 @@
 name: Flight Price Matrix Monitor
 
 on:
-  schedule:
-    # 早 8 点到晚 12 点 (北京时间 08:12 ~ 24:12，对应 UTC 00:00 ~ 16:59)，每 20 分钟一次 (12分, 32分, 52分)
-    - cron: '12,32,52 0-16 * * *'
-    # 早 6 点到早 8 点 (北京时间 06:12 ~ 07:52，对应 UTC 22:00 ~ 23:59)，每 20 分钟一次 (12分, 32分, 52分)
-    - cron: '12,32,52 22,23 * * *'
-  workflow_dispatch: # 支持在 GitHub Actions 网页手动点击触发
+  workflow_dispatch: # 由腾讯云服务器通过 API 远程高精度定时触发，同时支持网页端手动点击触发
 
 jobs:
   check-flights:
