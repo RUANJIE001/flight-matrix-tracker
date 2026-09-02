@@ -1,0 +1,11 @@
+[
+  {
+    "timestamp": "2026-09-02 02:44:05",
+    "origin": "PVG",
+    "dest": "TYO",
+    "global_lowest": 371.0,
+    "global_platform": "Google Flights",
+    "target_price": 2500.0,
+    "is_hit": true
+  }
+]
