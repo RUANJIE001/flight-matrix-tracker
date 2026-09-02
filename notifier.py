@@ -107,10 +107,21 @@ class Notifier:
                 if is_hit_price:
                     badge_html += '<span style="background:#fce8e6;color:#c5221f;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:bold;margin-left:4px;">达标</span>'
 
-                links_html = ""
+                links_list = []
+                # 1. 抓取到的平台直达链接
                 for o in offers:
                     if o.booking_url:
-                        links_html += f'<a href="{o.booking_url}" target="_blank" style="margin-right:8px;font-size:12px;color:#1a73e8;text-decoration:none;">{o.platform}</a>'
+                        links_list.append(f'<a href="{o.booking_url}" target="_blank" style="margin-right:6px;font-size:11px;color:#1a73e8;text-decoration:none;font-weight:500;">🔗 {o.platform}</a>')
+                
+                # 2. 补充携程与天巡官方实时直达链接 (方便用户一键在浏览器/App中核验对比)
+                ctrip_url = f"https://www.trip.com/flights/{origin.lower()}-to-{dest.lower()}/tickets-{origin.lower()}-{dest.lower()}?dcity={origin.lower()}&acity={dest.lower()}&ddate={dep}" + (f"&rdate={ret}&flighttype=rt" if ret else "&flighttype=ow")
+                sky_dep = dep.replace("-", "")[2:]
+                sky_ret = f"/{ret.replace('-', '')[2:]}" if ret else ""
+                sky_url = f"https://www.skyscanner.net/transport/flights/{origin.lower()}/{dest.lower()}/{sky_dep}{sky_ret}/?currency=CNY"
+                
+                links_list.append(f'<a href="{ctrip_url}" target="_blank" style="margin-right:6px;font-size:11px;color:#ff6913;text-decoration:none;">📱 携程</a>')
+                links_list.append(f'<a href="{sky_url}" target="_blank" style="font-size:11px;color:#00a698;text-decoration:none;">🌐 天巡</a>')
+                links_html = "".join(links_list)
 
                 matrix_rows_html += f"""
                 <tr style="background:{row_bg};border-bottom:1px solid #e8eaed;">
@@ -182,8 +193,9 @@ class Notifier:
                     </table>
                 </div>
 
-                <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e8eaed;font-size:12px;color:#70757a;text-align:center;">
-                    <p style="margin:0;">本邮件由 GitHub Actions 自动化监控脚本发送 · 数据实时抓取自 Google Flights、天巡与携程</p>
+                <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e8eaed;font-size:12px;color:#70757a;text-align:center;line-height:1.6;">
+                    <p style="margin:0;">本邮件由 GitHub Actions 自动化监控脚本发送 · 最低价由 Google Flights 全网航司实时直连抓取</p>
+                    <p style="margin:4px 0 0 0;color:#9aa0a6;">点击表格右侧【携程】与【天巡】可一键跳转至对应日期官方实时页面进行横向核验比价</p>
                 </div>
             </div>
         </body>
