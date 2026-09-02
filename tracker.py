@@ -20,6 +20,11 @@ from notifier import Notifier
 
 HISTORY_FILE = "history.json"
 
+def clean_val(v: Any) -> str:
+    if not v:
+        return ""
+    return str(v).strip().strip("'").strip('"').replace("\n", "").replace("\r", "")
+
 def load_config() -> Dict[str, Any]:
     """加载配置文件并支持 GitHub Actions 环境变量覆盖敏感项"""
     config_path = "config.yaml"
@@ -29,31 +34,41 @@ def load_config() -> Dict[str, Any]:
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    # 环境变量覆盖 (常用于 GitHub Secrets)
+    # 环境变量覆盖 (常用于 GitHub Secrets / Vars)
     if os.getenv("ORIGIN"):
-        config["flight"]["origin"] = os.getenv("ORIGIN")
+        config["flight"]["origin"] = clean_val(os.getenv("ORIGIN")).upper()
     if os.getenv("DEST"):
-        config["flight"]["dest"] = os.getenv("DEST")
+        config["flight"]["dest"] = clean_val(os.getenv("DEST")).upper()
     if os.getenv("DEPART_DATE"):
-        config["flight"]["depart_date"] = os.getenv("DEPART_DATE")
+        config["flight"]["depart_date"] = clean_val(os.getenv("DEPART_DATE"))
     if os.getenv("RETURN_DATE"):
-        config["flight"]["return_date"] = os.getenv("RETURN_DATE")
+        config["flight"]["return_date"] = clean_val(os.getenv("RETURN_DATE"))
     if os.getenv("TARGET_PRICE"):
-        config["flight"]["target_price"] = float(os.getenv("TARGET_PRICE"))
+        config["flight"]["target_price"] = float(clean_val(os.getenv("TARGET_PRICE")))
     if os.getenv("NONSTOP"):
-        config["flight"]["nonstop"] = os.getenv("NONSTOP").lower() in ["true", "1", "yes"]
+        config["flight"]["nonstop"] = clean_val(os.getenv("NONSTOP")).lower() in ["true", "1", "yes"]
 
-    # 邮件 Secret 覆盖
-    if os.getenv("EMAIL_SENDER"):
-        config["email"]["sender_email"] = os.getenv("EMAIL_SENDER")
-    if os.getenv("EMAIL_AUTH_CODE"):
-        config["email"]["sender_auth_code"] = os.getenv("EMAIL_AUTH_CODE")
-    if os.getenv("EMAIL_RECIPIENT"):
-        config["email"]["recipient_email"] = os.getenv("EMAIL_RECIPIENT")
-    if os.getenv("SMTP_SERVER"):
-        config["email"]["smtp_server"] = os.getenv("SMTP_SERVER")
-    if os.getenv("SMTP_PORT"):
-        config["email"]["smtp_port"] = int(os.getenv("SMTP_PORT"))
+    # 邮件 Secret 覆盖 (支持规范别名 EMAIL_USER / EMAIL_AUTH_TOKEN / EMAIL_HOST)
+    sender = os.getenv("EMAIL_SENDER") or os.getenv("EMAIL_USER")
+    if sender:
+        config["email"]["sender_email"] = clean_val(sender)
+
+    auth_token = os.getenv("EMAIL_AUTH_CODE") or os.getenv("EMAIL_AUTH_TOKEN") or os.getenv("EMAIL_PASSWORD")
+    if auth_token:
+        # 严格清洗内部空格 (针对 Google 16位应用密码)
+        config["email"]["sender_auth_code"] = clean_val(auth_token).replace(" ", "")
+
+    recipient = os.getenv("EMAIL_RECIPIENT") or os.getenv("RECEIVER_EMAIL")
+    if recipient:
+        config["email"]["recipient_email"] = clean_val(recipient)
+
+    host = os.getenv("SMTP_SERVER") or os.getenv("EMAIL_HOST")
+    if host:
+        config["email"]["smtp_server"] = clean_val(host).replace("http://", "").replace("https://", "").split(":")[0]
+
+    port = os.getenv("SMTP_PORT") or os.getenv("EMAIL_PORT")
+    if port:
+        config["email"]["smtp_port"] = int(clean_val(port))
 
     return config
 

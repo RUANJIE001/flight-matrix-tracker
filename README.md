@@ -56,16 +56,24 @@ git branch -M main
 git push -u origin main
 ```
 
-### 步骤 2：配置 GitHub Secrets (安全密码凭据)
-进入你的 GitHub 仓库页面，点击 **Settings** -> **Secrets and variables** -> **Actions**，添加以下 Repository Secrets：
+### 步骤 2：配置 GitHub Secrets (Gmail 邮箱密码凭据)
+进入你的 GitHub 仓库页面，点击 **Settings** -> **Secrets and variables** -> **Actions**，点击 **New repository secret** 添加：
 
-| Secret 名称 | 示例说明 | 必填 |
+| Secret 名称 | 示例值与说明 | 是否必填 |
 | :--- | :--- | :--- |
-| `EMAIL_SENDER` | 发信人邮箱，如 `your_email@qq.com` | 是 |
-| `EMAIL_AUTH_CODE` | 邮箱授权码（QQ/163邮箱后台生成的16位授权码） | 是 |
-| `EMAIL_RECIPIENT` | 接收提醒的收件邮箱 | 是 |
-| `SMTP_SERVER` | SMTP 地址，QQ 为 `smtp.qq.com`，163 为 `smtp.163.com` | 是 |
-| `SMTP_PORT` | 默认填 `465` (SSL) | 否 (默认465) |
+| `EMAIL_SENDER` | 你的发件 Gmail 账号，如 `your_email@gmail.com` | **必填** |
+| `EMAIL_AUTH_CODE` | Google 16 位**应用专用密码**（形如 `abcd efgh ijkl mnop`） | **必填** |
+| `EMAIL_RECIPIENT` | 接收提醒的目标邮箱（可与发件人一致） | **必填** |
+| `SMTP_SERVER` | 填 `smtp.gmail.com`（默认已内置，可不填） | 选填 |
+| `SMTP_PORT` | 填 `587`（默认推荐 587 STARTTLS，可不填） | 选填 |
+
+> 📌 **如何获取 Gmail 16 位应用专用密码 (App Password)？**
+> 1. 打开 Google 账号安全设置：[myaccount.google.com/security](https://myaccount.google.com/security)
+> 2. 确保已开启 **两步验证 (2-Step Verification)**。
+> 3. 访问 [Google App Passwords (应用专用密码)](https://myaccount.google.com/apppasswords)。
+> 4. 应用名称输入 `FlightMonitor`，点击创建。
+> 5. 系统将生成一段 **16 位字母密码**（形如 `abcd efgh ijkl mnop`）。直接将其复制填入 `EMAIL_AUTH_CODE` 即可（**脚本内置清洗算法，会自动过滤掉内部空格**）。
+> 6. 本脚本严格遵循云端 SMTP 规范：默认优先走 **`587` 端口 (STARTTLS)** 并自带 **`465` (SSL) 自动故障倒换**，在云端 Linux 执行机上极其稳定。
 
 *(注：航线参数既可以在 `config.example.yaml` 里直接提交，也可以在 GitHub 的 Repository Variables 中设置 `ORIGIN`, `DEST`, `DEPART_DATE`, `TARGET_PRICE` 等进行灵活覆盖)*
 

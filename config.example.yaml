@@ -15,17 +15,17 @@ platforms:
   ctrip: true            # 携程 / Trip.com (OTA 低价源)
   skyscanner: true       # 天巡 Skyscanner (聚合比价源)
 
-# 邮件通知配置 (支持 QQ邮箱、163邮箱、Gmail、Outlook 等)
-# 提示: 在 GitHub Actions 运行时，推荐将账号密码配置在 GitHub Secrets 中
+# 邮件通知配置 (默认使用 Gmail，支持 587 STARTTLS 与 465 SSL 自动故障倒换)
+# 提示: 在 GitHub Actions 运行时，请将账号密码配置在 GitHub Secrets 中
 email:
   enabled: true
-  smtp_server: "smtp.qq.com"  # 163 邮箱为 smtp.163.com, Gmail 为 smtp.gmail.com
-  smtp_port: 465              # SSL 端口通常为 465，TLS 端口通常为 587
-  use_ssl: true
-  sender_email: "your_email@qq.com"
-  sender_auth_code: "your_smtp_auth_code" # 邮箱授权码/应用密码 (非登录密码)
-  recipient_email: "your_target_email@qq.com"
-  notify_on: "always"         # "hit" (仅达标时发送) 或 "always" (每次定时都发送矩阵报表)
+  smtp_server: "smtp.gmail.com"  # Gmail 为 smtp.gmail.com (QQ 为 smtp.qq.com, 163 为 smtp.163.com)
+  smtp_port: 587                 # Gmail 推荐 587 (STARTTLS，云端最稳定) 或 465 (SSL)
+  use_ssl: false                 # 587端口使用 STARTTLS，465端口使用 SSL (系统内置双通道自动回退)
+  sender_email: "your_email@gmail.com"
+  sender_auth_code: "abcd efgh ijkl mnop" # Google 16位应用专用密码 (系统会自动剔除空格)
+  recipient_email: "your_target_email@gmail.com"
+  notify_on: "always"            # "hit" (仅达标时发送) 或 "always" (每次定时都发送矩阵报表)
 
 # 移动端即时推送 (可选，留空则不启用)
 webhook:

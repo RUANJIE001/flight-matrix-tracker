@@ -173,34 +173,84 @@ class Notifier:
         """
         return html
 
+    def _clean_val(self, v: Optional[str]) -> str:
+        """去除首尾空白、常见外层引号、换行符"""
+        if not v:
+            return ""
+        return str(v).strip().strip("'").strip('"').replace("\n", "").replace("\r", "")
+
     def _send_smtp_email(self, subject: str, html_content: str):
-        smtp_server = self.email_cfg.get("smtp_server")
-        smtp_port = int(self.email_cfg.get("smtp_port", 465))
-        use_ssl = self.email_cfg.get("use_ssl", True)
-        sender = self.email_cfg.get("sender_email")
-        auth_code = self.email_cfg.get("sender_auth_code")
-        recipient = self.email_cfg.get("recipient_email")
+        # 1. 读取并严格清洗配置
+        raw_host = self._clean_val(self.email_cfg.get("smtp_server", "smtp.gmail.com"))
+        host = raw_host.replace("http://", "").replace("https://", "").split(":")[0]
+        sender = self._clean_val(self.email_cfg.get("sender_email"))
+        recipient = self._clean_val(self.email_cfg.get("recipient_email"))
 
-        if not all([smtp_server, sender, auth_code, recipient]):
-            raise ValueError("邮件配置不完整，请检查 config.yaml 或 GitHub Secrets")
+        # ⚠️ 踩坑重点：必须完全剔除密码中的所有内部空格（针对 Google 16位应用专用密码形如 abcd efgh ijkl mnop）
+        token = self._clean_val(self.email_cfg.get("sender_auth_code", "")).replace(" ", "")
 
+        if not host or not sender or not token or not recipient:
+            raise ValueError("邮件配置不完整 (缺少 host / sender / auth_code / recipient)，请检查 config.yaml 或 GitHub Secrets")
+
+        # 2. 构建复合邮件对象
         msg = MIMEMultipart("alternative")
         msg["Subject"] = Header(subject, "utf-8")
-        msg["From"] = sender
-        msg["To"] = recipient
+        msg["From"] = Header(f"机票监控机器人 <{sender}>", "utf-8")
+        msg["To"] = Header(recipient, "utf-8")
 
         part = MIMEText(html_content, "html", "utf-8")
         msg.attach(part)
 
-        if use_ssl:
-            with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=15) as server:
-                server.login(sender, auth_code)
+        # 3. SSL 上下文握手与双通道自动回退 (优先 587 STARTTLS，失败自动切换 465 SSL)
+        import ssl
+        context = ssl.create_default_context()
+        channels = [
+            ("STARTTLS", 587),
+            ("SSL", 465)
+        ]
+
+        # 如果用户显式指定了端口且不是默认，优先尝试用户指定端口
+        user_port = int(self.email_cfg.get("smtp_port", 0))
+        if user_port in [587, 465]:
+            if user_port == 465:
+                channels = [("SSL", 465), ("STARTTLS", 587)]
+            else:
+                channels = [("STARTTLS", 587), ("SSL", 465)]
+
+        last_error = None
+        for mode, port in channels:
+            server = None
+            try:
+                print(f"[Notifier] 🚀 尝试连接 SMTP {host}:{port} ({mode} 模式)...")
+                if mode == "STARTTLS":
+                    server = smtplib.SMTP(host, port, timeout=25)
+                    server.set_debuglevel(0)
+                    server.ehlo()
+                    server.starttls(context=context)
+                    server.ehlo()
+                else:
+                    server = smtplib.SMTP_SSL(host, port, context=context, timeout=25)
+                    server.set_debuglevel(0)
+                    server.ehlo()
+
+                server.login(sender, token)
                 server.sendmail(sender, [recipient], msg.as_string())
-        else:
-            with smtplib.SMTP(smtp_server, smtp_port, timeout=15) as server:
-                server.starttls()
-                server.login(sender, auth_code)
-                server.sendmail(sender, [recipient], msg.as_string())
+                print(f"[Notifier] 🎉 邮件发送成功至: {recipient} (使用 {host}:{port} {mode})")
+                return
+            except smtplib.SMTPAuthenticationError as auth_err:
+                print(f"[Notifier] ❌ SMTP 认证失败 (账号/授权码错误，请核实 Gmail 16位应用密码): {auth_err}")
+                raise auth_err
+            except Exception as e:
+                print(f"[Notifier] ⚠️ {mode} ({port}) 连接失败 ({e})，准备切换备用通道...")
+                last_error = e
+            finally:
+                if server:
+                    try:
+                        server.quit()
+                    except Exception:
+                        pass
+
+        raise RuntimeError(f"所有 SMTP 通道连接均失败，最后错误: {last_error}")
 
     def _send_webhooks(self, subject: str, analysis: MatrixAnalysis):
         """推送至移动端 Webhook"""

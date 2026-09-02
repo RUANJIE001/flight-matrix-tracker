@@ -2,9 +2,9 @@ name: Flight Price Matrix Monitor
 
 on:
   schedule:
-    # 每天 UTC 0点, 6点, 12点, 18点执行 (对应北京时间 08:00, 14:00, 20:00, 02:00)
-    # 可根据需要修改 cron 表达式，例如 '0 */2 * * *' 代表每2小时一次
-    - cron: '0 */4 * * *'
+    # 避开整点拥堵高峰：每 4 小时第 38 分触发一次 (如 UTC 03:38, 07:38, 11:38...)
+    # 对应北京时间 11:38, 15:38, 19:38, 23:38, 03:38, 07:38
+    - cron: '38 */4 * * *'
   workflow_dispatch: # 支持在 GitHub Actions 网页手动点击触发
 
 jobs:
@@ -43,12 +43,12 @@ jobs:
 
       - name: 执行机票价格矩阵比价与监控
         env:
-          # 从 GitHub Secrets 中读取敏感信息
-          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
-          EMAIL_AUTH_CODE: ${{ secrets.EMAIL_AUTH_CODE }}
-          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          # 从 GitHub Secrets 中读取敏感信息 (兼容 EMAIL_SENDER 与 EMAIL_USER 等多重别名)
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER || secrets.EMAIL_USER }}
+          EMAIL_AUTH_CODE: ${{ secrets.EMAIL_AUTH_CODE || secrets.EMAIL_AUTH_TOKEN }}
+          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT || secrets.RECEIVER_EMAIL }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER || secrets.EMAIL_HOST || 'smtp.gmail.com' }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT || '587' }}
           # 可选：航线与目标覆盖
           ORIGIN: ${{ vars.ORIGIN }}
           DEST: ${{ vars.DEST }}
