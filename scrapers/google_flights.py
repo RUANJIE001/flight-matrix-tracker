@@ -87,8 +87,18 @@ class GoogleFlightsScraper(BaseScraper):
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             locale="zh-CN",
             timezone_id="Asia/Shanghai",
+            extra_http_headers={
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                "sec-ch-ua-platform": '"macOS"'
+            },
             viewport={"width": 1280, "height": 800}
         )
+
+        # 注入偏好 Cookie：强行锁定简体中文与人民币 (CNY)
+        await context.add_cookies([
+            {"name": "PREF", "value": "hl=zh-CN&gl=CN&curr=CNY&tz=Asia.Shanghai", "domain": ".google.com", "path": "/"},
+            {"name": "SOCS", "value": "CAAaBgiA_LyaBg", "domain": ".google.com", "path": "/"}
+        ])
 
         page: Page = await context.new_page()
 
@@ -129,16 +139,19 @@ class GoogleFlightsScraper(BaseScraper):
         return None
 
     async def _poll_price(self, page: Page, max_wait_sec: int = 12) -> Optional[float]:
-        """页面内部轮询查找有效价格 (严格优先提取人民币 CNY/￥)"""
+        """页面内部轮询查找有效价格 (智能识别日元 JPY / 美元 USD / 人民币 CNY 并统一换算为人民币)"""
         js_extract_code = """
         () => {
-            const cnyPrices = new Set();
-            const usdPrices = new Set();
+            const rawPrices = new Set();
+            const explicitCnyPrices = new Set();
+            const explicitJpyPrices = new Set();
+            const explicitUsdPrices = new Set();
 
-            // 专属人民币正则：全角￥(\uffe5)、半角¥(\u00a5)、CNY、RMB、元、人民币
-            const cnyPrefixRegex = /(?:[\\u00a5\\uffe5]|(?:CNY|RMB)\\$?\\s?)[\\s]*([\\d,]+(?:\\.\\d+)?)/gi;
-            const cnySuffixRegex = /([\\d,]+(?:\\.\\d+)?)\\s*(?:元|人民币|CNY)/gi;
-            const usdPrefixRegex = /\\$\\s*([\\d,]+(?:\\.\\d+)?)/g;
+            // 专属币种正则
+            const cnyPrefixRegex = /(?:[\u00a5\uffe5]|(?:CNY|RMB)\$?\s?)[\s]*([\d,]+(?:\.\d+)?)/gi;
+            const cnySuffixRegex = /([\d,]+(?:\.\d+)?)\s*(?:元|人民币|CNY)/gi;
+            const jpySuffixRegex = /([\d,]+(?:\.\d+)?)\s*(?:円|日元|JPY)/gi;
+            const usdPrefixRegex = /\$\s*([\d,]+(?:\.\d+)?)/g;
 
             function parseNumber(str) {
                 if (!str) return null;
@@ -157,25 +170,36 @@ class GoogleFlightsScraper(BaseScraper):
             function extract(text) {
                 if (!text || typeof text !== 'string') return;
                 
-                // 1. 人民币提取
-                cnyPrefixRegex.lastIndex = 0;
-                let m;
-                while ((m = cnyPrefixRegex.exec(text)) !== null) {
-                    const p = parseNumber(m[1]);
-                    if (p) cnyPrices.add(p);
-                }
+                // 1. 显式人民币
                 cnySuffixRegex.lastIndex = 0;
-                while ((m = cnySuffixRegex.exec(text)) !== null) {
-                    const p = parseNumber(m[1]);
-                    if (p) cnyPrices.add(p);
+                let m_cny;
+                while ((m_cny = cnySuffixRegex.exec(text)) !== null) {
+                    const p = parseNumber(m_cny[1]);
+                    if (p) explicitCnyPrices.add(p);
                 }
 
-                // 2. 美元备用提取 (若机房IP导致Google依然返回美元)
+                // 2. 显式日元 (円, JPY, 日元)
+                jpySuffixRegex.lastIndex = 0;
+                let m_jpy;
+                while ((m_jpy = jpySuffixRegex.exec(text)) !== null) {
+                    const p = parseNumber(m_jpy[1]);
+                    if (p) explicitJpyPrices.add(p);
+                }
+
+                // 3. 显式美元 ($)
                 usdPrefixRegex.lastIndex = 0;
                 let m_usd;
                 while ((m_usd = usdPrefixRegex.exec(text)) !== null) {
                     const p = parseNumber(m_usd[1]);
-                    if (p) usdPrices.add(p);
+                    if (p) explicitUsdPrices.add(p);
+                }
+
+                // 4. 符号 ¥ / ￥ 提取 (日元和人民币共用 ¥ 符号)
+                cnyPrefixRegex.lastIndex = 0;
+                let m;
+                while ((m = cnyPrefixRegex.exec(text)) !== null) {
+                    const p = parseNumber(m[1]);
+                    if (p) rawPrices.add(p);
                 }
             }
 
@@ -186,22 +210,60 @@ class GoogleFlightsScraper(BaseScraper):
                 const dp = el.getAttribute('data-price');
                 if (dp) {
                     const p = parseNumber(dp);
-                    if (p) cnyPrices.add(p);
+                    if (p) rawPrices.add(p);
                 }
                 if (el.children.length <= 1 && el.textContent && el.textContent.length < 40) {
                     extract(el.textContent);
                 }
             }
 
-            // 优先返回纯正的人民币价格
-            if (cnyPrices.size > 0) {
-                return Array.from(cnyPrices).sort((a, b) => a - b)[0];
+            // 页面语言与货币环境深度判定
+            const fullDocText = document.documentElement.innerText || "";
+            const isJapanesePage = /\bJPY\b|日本円|直行便|エコノミー|フライト|往復|[0-9]+円|通貨:\s*日本円/i.test(fullDocText);
+            const isChinesePage = /\bCNY\b|\bRMB\b|人民币|元|直飞|经济舱|往返|经停|货币:\s*人民币/i.test(fullDocText);
+            const isUsdPage = /\bUSD\b|\bUS\$/i.test(fullDocText);
+
+            // 汇率换算常量 (兜底换算为人民币 CNY)
+            const JPY_TO_CNY = 0.048; // 100 JPY ≈ 4.8 CNY
+            const USD_TO_CNY = 7.2;   // 1 USD ≈ 7.2 CNY
+
+            // 优先 1：明确带有“元/人民币/CNY”后缀的纯正价格
+            if (explicitCnyPrices.size > 0) {
+                return Array.from(explicitCnyPrices).sort((a, b) => a - b)[0];
             }
 
-            // 极端兜底：如果确实只抓到了美元价格（如 $371），按即时汇率换算成人民币（约 7.2）
-            if (usdPrices.size > 0) {
-                const lowestUsd = Array.from(usdPrices).sort((a, b) => a - b)[0];
-                return Math.round(lowestUsd * 7.2);
+            // 优先 2：中文环境下的 ¥ 价格 (即为纯正人民币 CNY)
+            if (isChinesePage && !isJapanesePage && rawPrices.size > 0) {
+                return Array.from(rawPrices).sort((a, b) => a - b)[0];
+            }
+
+            // 优先 3：如果页面明确是日文环境/JPY (包含日文关键字或显式日元价格)
+            if ((isJapanesePage || explicitJpyPrices.size > 0) && !isChinesePage) {
+                const jpyCandidate = explicitJpyPrices.size > 0 ? explicitJpyPrices : rawPrices;
+                if (jpyCandidate.size > 0) {
+                    const lowestJpy = Array.from(jpyCandidate).sort((a, b) => a - b)[0];
+                    // 将日元自动换算为人民币
+                    return Math.max(50, Math.round(lowestJpy * JPY_TO_CNY));
+                }
+            }
+
+            // 优先 4：美元环境自动换算
+            if (explicitUsdPrices.size > 0 || isUsdPage) {
+                const usdCandidate = explicitUsdPrices.size > 0 ? explicitUsdPrices : rawPrices;
+                if (usdCandidate.size > 0) {
+                    const lowestUsd = Array.from(usdCandidate).sort((a, b) => a - b)[0];
+                    return Math.round(lowestUsd * USD_TO_CNY);
+                }
+            }
+
+            // 兜底：若有 ¥ 符号价格
+            if (rawPrices.size > 0) {
+                const lowest = Array.from(rawPrices).sort((a, b) => a - b)[0];
+                // 若数值大于 15000，极大概率是日元（国内往返极少超过 15000 元人民币）
+                if (lowest >= 15000 && isJapanesePage) {
+                    return Math.round(lowest * JPY_TO_CNY);
+                }
+                return lowest;
             }
 
             return null;
