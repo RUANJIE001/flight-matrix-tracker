@@ -1618,5 +1618,14 @@
     "global_platform": "Google Flights",
     "target_price": 3500.0,
     "is_hit": false
+  },
+  {
+    "timestamp": "2026-09-09 13:13:49",
+    "origin": "SHA",
+    "dest": "KHG",
+    "global_lowest": null,
+    "global_platform": null,
+    "target_price": 3500.0,
+    "is_hit": false
   }
 ]
